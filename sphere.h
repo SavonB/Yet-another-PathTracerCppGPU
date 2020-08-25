@@ -1,47 +1,44 @@
-#pragma once
-#include "hittable.h"
-#include "vec3.h"
+#ifndef SPHEREH
+#define SPHEREH
 
-class sphere : public hittable {
-public:
-    __device__ sphere() {}
-    __device__ sphere(point3 cen, float r) : center(cen), radius(r) {};
+#include "hitable.h"
 
-    __device__ virtual bool hit(const ray& r, float tmin, float tmax, hit_record& rec) const;
-
-public:
-    point3 center;
-    float radius;
+class sphere: public hitable  {
+    public:
+        __device__ sphere() {}
+        __device__ sphere(vec3 cen, float r, material *m) : center(cen), radius(r), mat_ptr(m)  {};
+        __device__ virtual bool hit(const ray& r, float tmin, float tmax, hit_record& rec) const;
+        vec3 center;
+        float radius;
+        material *mat_ptr;
 };
 
 __device__ bool sphere::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
     vec3 oc = r.origin() - center;
-    float a = r.direction().length_squared();
-    float half_b = dot(oc, r.direction());
-    float c = oc.length_squared() - radius * radius;
-    float discriminant = half_b * half_b - a * c;
-
+    float a = dot(r.direction(), r.direction());
+    float b = dot(oc, r.direction());
+    float c = dot(oc, oc) - radius*radius;
+    float discriminant = b*b - a*c;
     if (discriminant > 0) {
-        float root = sqrt(discriminant);
-
-        float temp = (-half_b - root) / a;
+        float temp = (-b - sqrt(discriminant))/a;
         if (temp < t_max && temp > t_min) {
             rec.t = temp;
-            rec.p = r.at(rec.t);
-            vec3 outward_normal = (rec.p - center) / radius;
-            rec.set_face_normal(r, outward_normal);
+            rec.p = r.point_at_parameter(rec.t);
+            rec.normal = (rec.p - center) / radius;
+            rec.mat_ptr = mat_ptr;
             return true;
         }
-
-        temp = (-half_b + root) / a;
+        temp = (-b + sqrt(discriminant)) / a;
         if (temp < t_max && temp > t_min) {
             rec.t = temp;
-            rec.p = r.at(rec.t);
-            vec3 outward_normal = (rec.p - center) / radius;
-            rec.set_face_normal(r, outward_normal);
+            rec.p = r.point_at_parameter(rec.t);
+            rec.normal = (rec.p - center) / radius;
+            rec.mat_ptr = mat_ptr;
             return true;
         }
     }
-
     return false;
 }
+
+
+#endif
