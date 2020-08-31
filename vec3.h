@@ -1,5 +1,6 @@
 #ifndef VEC3H
 #define VEC3H
+#define pi 3.14159
 
 #include <math.h>
 #include <stdlib.h>
