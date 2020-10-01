@@ -38,36 +38,42 @@ __device__ float schlick(float cosine, float ref_idx) {
 
 class material {
 public:
+
+
     __device__ virtual bool scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered, curandState* local_rand_state) const = 0;
+    __device__ virtual vec3 emmitted(float u, float v, const vec3& p) const {
+        return vec3(1, 1, 1);
+    }
+
 };
 
 class lambertian : public material {
 public:
-    __device__ lambertian(const vec3& a) : albedo(a) {}
+    __device__ lambertian(const vec3& a) : albedo(new solid_color(a)) {}
+    __device__ lambertian(custom_texture* a) : albedo(a) {}
     __device__ virtual bool scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered, curandState* local_rand_state) const {
         vec3 target = rec.p + rec.normal + random_in_unit_sphere(local_rand_state);
-        scattered = ray(rec.p, target - rec.p,r_in.time());
-        attenuation = albedo;
+        scattered = ray(rec.p, target - rec.p, r_in.time());
+        attenuation = albedo->value(rec.u,rec.v,rec.p);
         return true;
     }
 
-    vec3 albedo;
+    custom_texture* albedo;
 };
-
-
-
 
 
 class metal : public material {
 public:
-    __device__ metal(const vec3& a, float f) : albedo(a) { if (f < 1) fuzz = f; else fuzz = 1; }
+    __device__ metal(const vec3& a, float f) : albedo(new solid_color(a)) { if (f < 1) fuzz = f; else fuzz = 1; }
+    __device__ metal(custom_texture* a, float f) : albedo(a) { if (f < 1) fuzz = f; else fuzz = 1; }
+
     __device__ virtual bool scatter(const ray& r_in, const hit_record& rec, vec3& attenuation, ray& scattered, curandState* local_rand_state) const {
         vec3 reflected = reflect(unit_vector(r_in.direction()), rec.normal);
         scattered = ray(rec.p, reflected + fuzz * random_in_unit_sphere(local_rand_state));
-        attenuation = albedo;
+        attenuation = albedo->value(rec.u,rec.v,rec.p);
         return (dot(scattered.direction(), rec.normal) > 0.0f);
     }
-    vec3 albedo;
+    custom_texture* albedo;
     float fuzz;
 };
 
@@ -112,4 +118,22 @@ public:
 
 };
 
+class diffuse_light : public material {
+public:
+    __device__ diffuse_light(custom_texture* a) : emit(a) {}
+    __device__ diffuse_light(vec3 color) : emit(new solid_color(color)) {}
+
+    __device__ virtual bool scatter(const ray& r_in,const hit_record& rec, vec3& attenuatuion, ray& scattered, curandState* local_rand_state)const override {
+        return false;
+
+    }
+
+    __device__ virtual vec3 emitted(float u, float v, const vec3& p) {
+        
+        return emit->value(u, v, p);
+    }
+public:
+    custom_texture* emit;
+ 
+};
 #endif

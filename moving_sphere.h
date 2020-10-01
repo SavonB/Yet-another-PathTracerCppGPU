@@ -53,3 +53,5 @@ __device__ bool moving_sphere::hit(const ray& r, float t_min, float t_max, hit_r
     return false;
 }
 
+
+

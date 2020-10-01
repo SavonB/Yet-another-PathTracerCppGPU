@@ -7,7 +7,7 @@ public:
     __device__ virtual vec3 value(float u, float v, const vec3& p) const = 0;
 };
 
-class solid_color : custom_texture {
+class solid_color : public custom_texture {
 public:
     __device__ solid_color() {}
     __device__ solid_color(vec3 c) : color_value(c) {}
@@ -22,3 +22,4 @@ private:
     vec3 color_value;
 
 };
+

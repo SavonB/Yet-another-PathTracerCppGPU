@@ -34,7 +34,7 @@ public:
     __host__ __device__ inline float length() const { return sqrt(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]); }
     __host__ __device__ inline float squared_length() const { return e[0] * e[0] + e[1] * e[1] + e[2] * e[2]; }
     __host__ __device__ inline void make_unit_vector();
-
+    __device__ inline vec3 clamp(vec3 low, vec3 high, vec3 q);
 
     float e[3];
 };
@@ -143,5 +143,11 @@ __host__ __device__ inline vec3 unit_vector(vec3 v) {
     return v / v.length();
 }
 
+__device__ inline vec3 clamp(vec3 low, vec3 high, vec3 q) {
+    float a = max(min(high[0], q[0]), low[0]);
+    float b = max(min(high[1], q[1]), low[1]);
+    float c = max(min(high[2], q[2]), low[2]);
+    return vec3(a, b, c);
+}
 
 #endif
