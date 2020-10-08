@@ -9,8 +9,10 @@
 #include "camera.h"
 #include "material.h"
 #include "moving_sphere.h"
+#include "aarect.h"
 #include <fstream>
 #include <string>
+
 // limited version of checkCudaErrors from helper_cuda.h in CUDA examples
 #define checkCudaErrors(val) check_cuda( (val), #val, __FILE__, __LINE__ )
 
@@ -28,31 +30,48 @@ void check_cuda(cudaError_t result, char const* const func, const char* const fi
 // it was blowing up the stack, so we have to turn this into a
 // limited-depth loop instead.  Later code in the book limits to a max
 // depth of 50, so we adapt this a few chapters early on the GPU.
-__device__ vec3 color(const ray& r, hitable** world, curandState* local_rand_state) {
+
+__device__ vec3 color(const ray& r, hitable** world, curandState* local_rand_state, vec3& background) {
     ray cur_ray = r;
     vec3 cur_attenuation = vec3(1.0, 1.0, 1.0);
+    hit_record rec;
+    //if the initially fired ray hits nothing return background color bblack
+    if (!(*world)->hit(r, 0.001f, FLT_MAX, rec)) {
+
+        return background;
+    }
+
     for (int i = 0; i < 50; i++) {
-        hit_record rec;
+
+
+        
         if ((*world)->hit(cur_ray, 0.001f, FLT_MAX, rec)) {
             ray scattered;
             vec3 attenuation;
+            vec3 emitted = rec.mat_ptr->emmitted(rec.u, rec.v, rec.p);
             if (rec.mat_ptr->scatter(cur_ray, rec, attenuation, scattered, local_rand_state)) {
                 cur_attenuation *= attenuation;
                 cur_ray = scattered;
             }
             else {
-                return vec3(0.0, 0.0, 0.0);
+                //return rec.mat_ptr->emmitted(rec.u, rec.v, rec.p);
+                //return cur_attenuation;
+                return cur_attenuation* rec.mat_ptr->emmitted(rec.u, rec.v, rec.p);
+         
+
             }
         }
+
+
         else {
-            vec3 unit_direction = unit_vector(cur_ray.direction());
-            float t = 0.5f * (unit_direction.y() + 1.0f);
-            vec3 c = (1.0f - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0);
-            return cur_attenuation * c;
+            
+            return cur_attenuation;
         }
+
     }
-    return vec3(0.0, 0.0, 0.0); // exceeded recursion
+    return background; // exceeded recursion
 }
+
 
 __global__ void render_init(int max_x, int max_y, curandState* rand_state) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -60,10 +79,11 @@ __global__ void render_init(int max_x, int max_y, curandState* rand_state) {
     if ((i >= max_x) || (j >= max_y)) return;
     int pixel_index = j * max_x + i;
     //Each thread gets same seed, a different sequence number, no offset
-    curand_init(1984 + pixel_index, 0, 0, &rand_state[pixel_index]);
+    curand_init(1.984 + pixel_index, 0, 0, &rand_state[pixel_index]);
 }
 
-__global__ void render(vec3* fb, int max_x, int max_y, int ns, camera** cam, hitable** world, curandState* rand_state) {
+__global__ void render(vec3* fb, int max_x, int max_y, int ns, camera** cam, hitable** world,curandState* rand_state, vec3 background) {
+    
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     int j = threadIdx.y + blockIdx.y * blockDim.y;
     if ((i >= max_x) || (j >= max_y)) return;
@@ -74,10 +94,11 @@ __global__ void render(vec3* fb, int max_x, int max_y, int ns, camera** cam, hit
         float u = float(i + curand_uniform(&local_rand_state)) / float(max_x);
         float v = float(j + curand_uniform(&local_rand_state)) / float(max_y);
         ray r = (*cam)->get_ray(u, v, &local_rand_state);
-        col += color(r, world, &local_rand_state);
+        col += color(r, world, &local_rand_state, background);
     }
     rand_state[pixel_index] = local_rand_state;
     col /= float(ns);
+    col = clamp(vec3(0, 0, 0),vec3(1, 1, 1), col);
     col[0] = sqrt(col[0]);
     col[1] = sqrt(col[1]);
     col[2] = sqrt(col[2]);
@@ -85,56 +106,47 @@ __global__ void render(vec3* fb, int max_x, int max_y, int ns, camera** cam, hit
 }
 #define RND (curand_uniform(&local_rand_state))
 
+/*SET WORLD*/
 
 __global__ void create_world(hitable** d_list, hitable** d_world,
-    camera** d_camera, int aspect,vec3 lookfrom, vec3 lookat, vec3 vup, float fvov, float aperture, curandState *rand_state) {
+    camera** d_camera, int aspect, vec3 lookfrom, vec3 lookat, vec3 vup, float fvov, float aperture, curandState* rand_state) {
     curandState local_rand_state = *rand_state;
     if (threadIdx.x == 0 && blockIdx.x == 0) {
-        d_list[0] = new sphere(vec3(0, .5, -1), 0.5,
-            new lambertian(vec3(0.7, 0.3, 0.3)));
+        //my camera settings currently have y direction going up
 
-        d_list[0] = new moving_sphere(vec3(0, .5, -1), 
-            vec3(0, 1.0, -1),0.,1.,.5,
-            new lambertian(vec3(0.7, 0.3, 0.3)));
+        d_list[0] = new xyrect(0, 555., 0, 555., 0, new lambertian(vec3(0,.7,0))); //left
+
+        d_list[1] = new yzrect(0, 555., 0, 555., 555, new lambertian(vec3(.7, .7, .7)),true); //back
         
-        d_list[1] = new sphere(vec3(0, -1000.0, -1), 1000,
-            new lambertian(vec3(0.5, 0.5, 0.5)));
-        d_list[2] = new sphere(vec3(1, .5, -1), 0.5,
-            new metal(vec3(0.8, 0.6, 0.2), 1.0));
-        
-        //hollow sphere
-        d_list[3] = new sphere(vec3(-1, .5, -1), 0.5,
-            new dielectric(1.5));
-        d_list[4] = new sphere(vec3(-1, .5, -1), -0.45,
-            new dielectric(1.5));
-        
-        int i = 1;
-        for (int a = -5; a < 10; a++) {
-            for (int b = -5; b < 10; b++) {
-                vec3 center = vec3(-a - RND, .2, b + RND);
-                d_list[4 + i] = new sphere(center, 0.2,
-                    new metal(vec3(0.1f * (1.0f + RND), 0.5f * (1.0f + RND), 0.5f * (1.0f + RND)), 0.5f * RND));
-                i++;
-            }
-            }
-       
-        *d_world = new hitable_list(d_list, 201);
-        float focus_dist = (lookfrom-lookat).length();
-        *d_camera = new camera(fvov,aspect,lookfrom,lookat,vup,aperture,focus_dist,0.,1.);
+        material* m = new diffuse_light(vec3(15,15,15));
+        d_list[2] = new xzrect(0,555., 0, 555.,0, new lambertian(vec3(.7,.7,.7))); //bottom
+        d_list[3] = new xyrect(0, 555., 0, 555., 555, new lambertian(vec3(1, 0, 0)),true); //right
+        d_list[4] = new xzrect(0, 555., 0, 555., 555, new lambertian(vec3(.7, .7, .7)),true); //top
+        d_list[5] = new xzrect(213, 343, 227, 332, 554, m); //light
+
+        *d_world = new hitable_list(d_list, 6);
+        float focus_dist = (lookfrom - lookat).length();
+        *d_camera = new camera(fvov, aspect, lookfrom, lookat, vup, aperture, focus_dist, 0., 1.);
     }
 }
 
 __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camera) {
-    for (int i = 0; i < (201); i++) {
+    for (int i = 0; i < (6); i++) {
         delete ((sphere*)d_list[i])->mat_ptr;
         delete d_list[i];
     }
     delete* d_world;
     delete* d_camera;
 }
+
+
+
+
+
+
 //takes in image width,height,numsamples,lookfrom,lookat,vup,fvov_degrees,aperture
-void run(int nx, int ny, int ns, vec3 lookfrom, vec3 lookat, vec3 vup, float fvov_degrees, float aperture,std::string filename) {
-    
+void run(int nx, int ny, int ns, vec3 lookfrom, vec3 lookat, vec3 vup, float fvov_degrees, float aperture,std::string filename, vec3& background) {
+
 
 
     int tx = 16;
@@ -163,7 +175,7 @@ void run(int nx, int ny, int ns, vec3 lookfrom, vec3 lookat, vec3 vup, float fvo
 
 
     checkCudaErrors(cudaMalloc((void**)&d_camera, sizeof(camera*)));
-    create_world << <1, 1 >> > (d_list, d_world, d_camera, int(nx / ny), lookfrom, lookat, vup, fvov_degrees, aperture,d_rand_state);
+    create_world << <1, 1 >> > (d_list, d_world, d_camera, int(nx / ny), lookfrom, lookat, vup, fvov_degrees, aperture, d_rand_state);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
 
@@ -175,7 +187,8 @@ void run(int nx, int ny, int ns, vec3 lookfrom, vec3 lookat, vec3 vup, float fvo
     render_init << <blocks, threads >> > (nx, ny, d_rand_state);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
-    render << <blocks, threads >> > (fb, nx, ny, ns, d_camera, d_world, d_rand_state);
+    
+    render << <blocks, threads >> > (fb, nx, ny, ns, d_camera, d_world,d_rand_state,background);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
     stop = clock();
@@ -185,7 +198,7 @@ void run(int nx, int ny, int ns, vec3 lookfrom, vec3 lookat, vec3 vup, float fvo
     // Output FB as Image
     std::ofstream myfile;
 
-    myfile.open("movie\\"+filename);
+    myfile.open(filename);
     myfile << "P3\n" << nx << ' ' << ny << "\n255\n";
     for (int j = ny - 1; j >= 0; j--) {
         for (int i = 0; i < nx; i++) {
@@ -212,24 +225,25 @@ void run(int nx, int ny, int ns, vec3 lookfrom, vec3 lookat, vec3 vup, float fvo
 int main() {
     //takes in image width,height,numsamples,lookfrom,lookat,vup,fvov_degrees,aperture
     int nx = 500;
-    int ny = 250;
+    int ny = 500;
     int ns = 100;
-    vec3 lookfrom = vec3(13, 2, 5);
-    vec3 lookat = vec3(0, 0, 0);
+    vec3 lookfrom = vec3(-800,278,278);
+    vec3 lookat = vec3(0,278,278);
+    vec3 background = vec3(0, 0, 0);
     float r = (lookfrom - lookat).length();
     float radians = 1.26;
     vec3 vup = vec3(0, 1, 0);
-    float fvov_degrees = 20.f;
+    float fvov_degrees = 40.;
     float aperture = 0.2;
-    
+
     //make a video 30 fps for 5secs so 150 frames total
     //each frame the camera will rotate 360/150 = 2.4 degrees around the or 0.0418879 radians
     //each image will have in incremental name
     for (int i = 0; i < 1; ++i) {
-        std::string filename = "image"+std::to_string(i);
-        filename =filename+ ".ppm";
-        run(nx, ny, ns, lookfrom, lookat, vup, fvov_degrees, aperture, filename);
-        lookfrom -= vec3(0,0,1);
+        std::string filename = "image" + std::to_string(i);
+        filename = filename + ".ppm";
+        run(nx, ny, ns, lookfrom, lookat, vup, fvov_degrees, aperture, filename,background);
+        lookfrom -= vec3(0, 0, 1);
         radians += 1.26;
     }
 

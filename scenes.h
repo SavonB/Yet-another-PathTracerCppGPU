@@ -82,3 +82,31 @@ __global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camer
     delete* d_world;
     delete* d_camera;
 }
+
+
+//single light
+
+__global__ void create_world(hitable** d_list, hitable** d_world,
+    camera** d_camera, int aspect, vec3 lookfrom, vec3 lookat, vec3 vup, float fvov, float aperture, curandState* rand_state) {
+    curandState local_rand_state = *rand_state;
+    if (threadIdx.x == 0 && blockIdx.x == 0) {
+        d_list[0] = new sphere(vec3(0, .5, -1), 0.5,
+            new lambertian(vec3(0.7, 0.3, 0.3)));
+        d_list[1] = new sphere(vec3(0, -1000.0, -1), 1000,
+            new lambertian(vec3(0.5, 0.5, 0.5)));
+        d_list[2] = new sphere(vec3(0, .5, -3), 0.5,
+            new diffuse_light(vec3(5, 5, 10)));
+        *d_world = new hitable_list(d_list, 3);
+        float focus_dist = (lookfrom - lookat).length();
+        *d_camera = new camera(fvov, aspect, lookfrom, lookat, vup, aperture, focus_dist, 0., 1.);
+    }
+}
+
+__global__ void free_world(hitable** d_list, hitable** d_world, camera** d_camera) {
+    for (int i = 0; i < (3); i++) {
+        delete ((sphere*)d_list[i])->mat_ptr;
+        delete d_list[i];
+    }
+    delete* d_world;
+    delete* d_camera;
+}

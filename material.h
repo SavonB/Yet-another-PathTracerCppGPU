@@ -128,12 +128,13 @@ public:
 
     }
 
-    __device__ virtual vec3 emitted(float u, float v, const vec3& p) {
+    __device__ virtual vec3 emmitted(float u, float v, const vec3& p) const override {
         
+        //return vec3(10, 10, 10);
         return emit->value(u, v, p);
     }
 public:
     custom_texture* emit;
- 
+   
 };
 #endif

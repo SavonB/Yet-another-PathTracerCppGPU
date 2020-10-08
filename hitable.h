@@ -12,7 +12,7 @@ struct hit_record
     vec3 normal;
     float u, v;
     material* mat_ptr;
-    bool front_face;
+    //bool front_face;
 };
 
 class hitable {
