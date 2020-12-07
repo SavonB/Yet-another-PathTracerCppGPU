@@ -67,7 +67,7 @@ __device__ bool xyrect::hit(const ray& r, float t_min, float t_max, hit_record& 
     return true;
 }
 
-bool xzrect::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
+__device__ bool xzrect::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
     auto t = (k - r.origin().y()) / r.direction().y();
     if (t < t_min || t > t_max)
         return false;
@@ -84,7 +84,7 @@ bool xzrect::hit(const ray& r, float t_min, float t_max, hit_record& rec) const 
     rec.p = r.point_at_parameter(t);
     return true;
 }
-bool yzrect::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
+__device__ bool yzrect::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
     auto t = (k - r.origin().x()) / r.direction().x();
     if (t < t_min || t > t_max)
         return false;
@@ -101,4 +101,32 @@ bool yzrect::hit(const ray& r, float t_min, float t_max, hit_record& rec) const 
     rec.mat_ptr = mp;
     rec.p = r.point_at_parameter(t);
     return true;
+}
+
+__device__ void add_box(vec3 p, vec3 q, material* mat, hitable**l, int index, vec3 translation = vec3(0,0,0), float degrees = 0) {
+    l[index + 0] = new xyrect(p.x(), q.x(), p.y(), q.y(), p.z(), mat); //left
+    l[index + 0] = new translate(l[index + 0], translation);
+    l[index + 0] = new rotate_y(l[index + 0], degrees);
+
+    l[index + 1] = new xyrect(p.x(), q.x(), p.y(), q.y(), q.z(), mat); //right
+    l[index + 1] = new translate(l[index + 1], translation);
+    l[index + 1] = new rotate_y(l[index + 1], degrees);
+
+    l[index + 2] = new xzrect(p.x(), q.x(), p.z(), q.z(), p.y(), mat); //bot
+    l[index + 2] = new translate(l[index + 2], translation);
+    l[index + 2] = new rotate_y(l[index + 2], degrees);
+
+    l[3 + index] = new xzrect(p.x(), q.x(), p.z(), q.z(), q.y(), mat); //top
+    l[index + 3] = new translate(l[index + 3], translation);
+    l[index + 3] = new rotate_y(l[index + 3], degrees);
+
+    l[4 + index] = new yzrect(p.y(), q.y(), p.z(), q.z(), p.x(), mat); //front
+    l[index + 4] = new translate(l[index + 4], translation);
+    l[index + 4] = new rotate_y(l[index + 4], degrees);
+
+    l[5 + index] = new yzrect(p.y(), q.y(), p.z(), q.z(), q.x(), mat); //back
+    l[index + 5] = new translate(l[index + 5], translation);
+    l[index + 5] = new rotate_y(l[index + 5], degrees);
+
+
 }
